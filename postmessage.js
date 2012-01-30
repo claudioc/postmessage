@@ -21,68 +21,44 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
  **/
-var NO_JQUERY = {};
-(function(window, $, undefined) {
+(function(window, undefined) {
 
-     if (!("console" in window)) {
-         var c = window.console = {};
-         c.log = c.warn = c.error = c.debug = function(){};
-     }
+     var previousPm = window.pm;
 
-     if ($ === NO_JQUERY) {
-         // jQuery is optional
-         $ = {
-             fn: {},
-             extend: function() {
-                 var a = arguments[0];
-                 for (var i=1,len=arguments.length; i<len; i++) {
-                     var b = arguments[i];
-                     for (var prop in b) {
-                         a[prop] = b[prop];
-                     }
-                 }
-                 return a;
-             }
-         };
-     }
+     var extend = function() {
+       var a = arguments[0];
+       for (var i=1,len=arguments.length; i<len; i++) {
+         var b = arguments[i];
+         for (var prop in b) {
+             a[prop] = b[prop];
+         }
+       }
+       return a;
+     }     
 
-     $.fn.pm = function() {
-         console.log("usage: \nto send:    $.pm(options)\nto receive: $.pm.bind(type, fn, [origin])");
-         return this;
-     };
+     var pm = window.pm = {
 
-     // send postmessage
-     $.pm = window.pm = function(options) {
-         pm.send(options);
-     };
+         noConflict: function() {
+           window.pm = previousPm;
+           return this;
+         },
 
-     // bind postmessage handler
-     $.pm.bind = window.pm.bind = function(type, fn, origin, hash, async_reply) {
-         pm.bind(type, fn, origin, hash, async_reply === true);
-     };
+         // default postmessage origin on bind
+         origin: null,
 
-     // unbind postmessage handler
-     $.pm.unbind = window.pm.unbind = function(type, fn) {
-         pm.unbind(type, fn);
-     };
-
-     // default postmessage origin on bind
-     $.pm.origin = window.pm.origin = null;
-
-     // default postmessage polling if using location hash to pass postmessages
-     $.pm.poll = window.pm.poll = 200;
-
-     var pm = {
+         // default postmessage polling if using location hash to pass postmessages
+         poll: 200,
 
          send: function(options) {
-             var o = $.extend({}, pm.defaults, options),
-             target = o.target;
+             var o = extend({}, pm.defaults, options),
+                 target = o.target;
+
              if (!o.target) {
-                 console.warn("postmessage target window required");
+                 // console.warn("postmessage target window required");
                  return;
              }
              if (!o.type) {
-                 console.warn("postmessage type required");
+                 // console.warn("postmessage type required");
                  return;
              }
              var msg = {data:o.data, type:o.type};
@@ -102,28 +78,24 @@ var NO_JQUERY = {};
              }
          },
 
-         bind: function(type, fn, origin, hash, async_reply) {
-           pm._replyBind ( type, fn, origin, hash, async_reply );
-         },
-       
-         _replyBind: function(type, fn, origin, hash, isCallback) {
-           if (("postMessage" in window) && !hash) {
-               pm._bind();
-           }
-           else {
-               pm.hash._bind();
-           }
-           var l = pm.data("listeners.postmessage");
-           if (!l) {
-               l = {};
-               pm.data("listeners.postmessage", l);
-           }
-           var fns = l[type];
-           if (!fns) {
-               fns = [];
-               l[type] = fns;
-           }
-           fns.push({fn:fn, callback: isCallback, origin:origin || $.pm.origin});
+         bind: function(type, fn, origin, hash) {
+             if (("postMessage" in window) && !hash) {
+                 pm._bind();
+             }
+             else {
+                 pm.hash._bind();
+             }
+             var l = pm.data("listeners.postmessage");
+             if (!l) {
+                 l = {};
+                 pm.data("listeners.postmessage", l);
+             }
+             var fns = l[type];
+             if (!fns) {
+                 fns = [];
+                 l[type] = fns;
+             }
+             fns.push({fn:fn, origin:origin || pm.origin});
          },
 
          unbind: function(type, fn) {
@@ -203,16 +175,15 @@ var NO_JQUERY = {};
          },
 
          _dispatch: function(e) {
-             //console.log("$.pm.dispatch", e, this);
              try {
                  var msg = JSON.parse(e.data);
              }
              catch (ex) {
-                 console.warn("postmessage data invalid json: ", ex);
+                 // console.warn("postmessage data invalid json: ", ex);
                  return;
              }
              if (!msg.type) {
-                 console.warn("postmessage message type required");
+                 // console.warn("postmessage message type required");
                  return;
              }
              var cbs = pm.data("callbacks.postmessage") || {},
@@ -225,8 +196,8 @@ var NO_JQUERY = {};
                  var fns = l[msg.type] || [];
                  for (var i=0,len=fns.length; i<len; i++) {
                      var o = fns[i];
-                     if (o.origin && o.origin !== '*' && e.origin !== o.origin) {
-                         console.warn("postmessage message origin mismatch", e.origin, o.origin);
+                     if (o.origin && o.origin != '*' && e.origin !== o.origin) {
+                         // console.warn("postmessage message origin mismatch", e.origin, o.origin);
                          if (msg.errback) {
                              // notify post message errback
                              var error = {
@@ -237,26 +208,16 @@ var NO_JQUERY = {};
                          }
                          continue;
                      }
-
-                     function sendReply ( data ) {
-                       if (msg.callback) {
-                           pm.send({target:e.source, data:data, type:msg.callback});
-                       }
-                     }
-                     
                      try {
-                         if ( o.callback ) {
-                           o.fn(msg.data, sendReply, e);
-                         } else {
-                           sendReply ( o.fn(msg.data, e) );
+                         var r = o.fn(msg.data);
+                         if (msg.callback) {
+                             pm.send({target:e.source, data:r, type:msg.callback});
                          }
                      }
                      catch (ex) {
                          if (msg.errback) {
                              // notify post message errback
                              pm.send({target:e.source, data:ex, type:msg.errback});
-                         } else {
-                             throw ex;
                          }
                      }
                  };
@@ -268,11 +229,10 @@ var NO_JQUERY = {};
      pm.hash = {
 
          send: function(options, msg) {
-             //console.log("hash.send", target_window, options, msg);
              var target_window = options.target,
              target_url = options.url;
              if (!target_url) {
-                 console.warn("postmessage target window url is required");
+                 // console.warn("postmessage target window url is required");
                  return;
              }
              target_url = pm.hash._url(target_url);
@@ -298,7 +258,7 @@ var NO_JQUERY = {};
                  }
              }
              if (source_window == null) {
-                 console.warn("postmessage windows must be direct parent/child windows and the child must be available through the parent window.frames list");
+                 // console.warn("postmessage windows must be direct parent/child windows and the child must be available through the parent window.frames list");
                  return;
              }
              var hashmessage = {
@@ -330,7 +290,7 @@ var NO_JQUERY = {};
                                          pm.hash._dispatch(hash.substring(pm.hash._regex_len));
                                      }
                                  }
-                             }, $.pm.poll || 200);
+                             }, pm.poll || 200);
                  pm.data("polling.postmessage", 1);
              }
          },
@@ -371,8 +331,8 @@ var NO_JQUERY = {};
                      var o = fns[i];
                      if (o.origin) {
                          var origin = /https?\:\/\/[^\/]*/.exec(hash.source.url)[0];
-                         if (o.origin !== '*' && origin !== o.origin) {
-                             console.warn("postmessage message origin mismatch", origin, o.origin);
+                         if (origin !== o.origin) {
+                             // console.warn("postmessage message origin mismatch", origin, o.origin);
                              if (msg.errback) {
                                  // notify post message errback
                                  var error = {
@@ -384,26 +344,16 @@ var NO_JQUERY = {};
                              continue;
                          }
                      }
-
-                     function sendReply ( data ) {
-                       if (msg.callback) {
-                         pm.send({target:source_window, data:data, type:msg.callback, hash:true, url:hash.source.url});
-                       }
-                     }
-                     
                      try {
-                         if ( o.callback ) {
-                           o.fn(msg.data, sendReply);
-                         } else {
-                           sendReply ( o.fn(msg.data) );
+                         var r = o.fn(msg.data);
+                         if (msg.callback) {
+                             pm.send({target:source_window, data:r, type:msg.callback, hash:true, url:hash.source.url});
                          }
                      }
                      catch (ex) {
                          if (msg.errback) {
                              // notify post message errback
                              pm.send({target:source_window, data:ex, type:msg.errback, hash:true, url:hash.source.url});
-                         } else {
-                             throw ex;
                          }
                      }
                  };
@@ -417,20 +367,18 @@ var NO_JQUERY = {};
 
      };
 
-     $.extend(pm, {
-                  defaults: {
-                      target: null,  /* target window (required) */
-                      url: null,     /* target window url (required if no window.postMessage or hash == true) */
-                      type: null,    /* message type (required) */
-                      data: null,    /* message data (required) */
-                      success: null, /* success callback (optional) */
-                      error: null,   /* error callback (optional) */
-                      origin: "*",   /* postmessage origin (optional) */
-                      hash: false    /* use location hash for message passing (optional) */
-                  }
-              });
+     pm.defaults = {
+          target: null,  /* target window (required) */
+          url: null,     /* target window url (required if no window.postMessage or hash == true) */
+          type: null,    /* message type (required) */
+          data: null,    /* message data (required) */
+          success: null, /* success callback (optional) */
+          error: null,   /* error callback (optional) */
+          origin: "*",   /* postmessage origin (optional) */
+          hash: false    /* use location hash for message passing (optional) */
+      };
 
- })(this, typeof jQuery === "undefined" ? NO_JQUERY : jQuery);
+ })(this);
 
 /**
  * http://www.JSON.org/json2.js
